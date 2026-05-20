@@ -485,6 +485,31 @@ const oauth2Schema = Yup.object({
     then: Yup.array().of(oauth2AdditionalClaimSchema).nullable(),
     otherwise: Yup.array().nullable().strip()
   }),
+  requestObjectTyp: Yup.string().when('grantType', {
+    is: (val) => oidcGrantTypes.includes(val),
+    then: Yup.string().nullable(),
+    otherwise: Yup.string().nullable().strip()
+  }),
+  requestObjectPrivateKey: Yup.string().when('grantType', {
+    is: (val) => oidcGrantTypes.includes(val),
+    then: Yup.string().nullable(),
+    otherwise: Yup.string().nullable().strip()
+  }),
+  requestObjectPrivateKeyType: Yup.string().when('grantType', {
+    is: (val) => oidcGrantTypes.includes(val),
+    then: Yup.string().oneOf(['text', 'file']).nullable(),
+    otherwise: Yup.string().nullable().strip()
+  }),
+  requestObjectPrivateKeyFormat: Yup.string().when('grantType', {
+    is: (val) => oidcGrantTypes.includes(val),
+    then: Yup.string().oneOf(['pem', 'jwk']).nullable(),
+    otherwise: Yup.string().nullable().strip()
+  }),
+  requestObjectKeyId: Yup.string().when('grantType', {
+    is: (val) => oidcGrantTypes.includes(val),
+    then: Yup.string().nullable(),
+    otherwise: Yup.string().nullable().strip()
+  }),
   usePAR: Yup.boolean().when('grantType', {
     is: (val) => oidcGrantTypes.includes(val),
     then: Yup.boolean().nullable(),

@@ -83,6 +83,26 @@ const resolveTokenEndpointAuthMethod = (opts: TokenEndpointAuthOptions): TokenEn
     : 'client_secret_post';
 };
 
+/**
+ * Auto-detects whether a custom claim's string value is meant to be a nested JSON object or array
+ * (e.g. for OIDC's `claims` request parameter — OIDC Core 1.0 §5.5 — which is a JSON object).
+ * If the value (trimmed) starts with `{` or `[` and parses as valid JSON, the parsed structure is
+ * used; otherwise the raw string is kept. Primitive-looking values like "123" or "true" are NOT
+ * coerced to number/boolean — they stay as strings, which is almost always what callers want.
+ */
+export const parseClaimValue = (value: string | undefined | null): unknown => {
+  const raw = value ?? '';
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Fall through to raw string when JSON is malformed — better than failing the whole request.
+    }
+  }
+  return raw;
+};
+
 const buildClaims = (opts: TokenEndpointAuthOptions): Record<string, unknown> => {
   const now = Math.floor(Date.now() / 1000);
   const lifetime = (opts.assertionLifetime && opts.assertionLifetime > 0)
@@ -100,7 +120,7 @@ const buildClaims = (opts: TokenEndpointAuthOptions): Record<string, unknown> =>
 
   for (const claim of opts.additionalClaims || []) {
     if (claim?.enabled && claim?.name) {
-      claims[claim.name] = claim.value ?? '';
+      claims[claim.name] = parseClaimValue(claim.value);
     }
   }
 
@@ -166,7 +186,10 @@ const signClientAssertion = async (
  */
 export interface SignJwtOptions {
   algorithm: TokenEndpointAuthSigningAlg;
-  protectedHeaderType?: 'JWT' | 'oauth-authz-req+jwt';
+  // JWT `typ` header. Defaults to 'JWT' (RFC 7519). For Request Objects, RFC 9101 §10.8 specifies
+  // 'oauth-authz-req+jwt'. Callers can pass any string — pre-RFC-9101 OPs often expect 'JWT' for
+  // request objects, and some niche OPs use other values.
+  protectedHeaderType?: string;
   keyId?: string;
   claims: Record<string, unknown>;
 }
@@ -175,7 +198,7 @@ export const signJwt = async (
   opts: SignJwtOptions,
   signingKey: Uint8Array | KeyLike
 ): Promise<string> => {
-  const header: { alg: TokenEndpointAuthSigningAlg; typ: 'JWT' | 'oauth-authz-req+jwt'; kid?: string } = {
+  const header: { alg: TokenEndpointAuthSigningAlg; typ: string; kid?: string } = {
     alg: opts.algorithm,
     typ: opts.protectedHeaderType || 'JWT'
   };

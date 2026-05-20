@@ -202,6 +202,21 @@ const authorizeUserInWindow = ({ authorizeUrl, callbackUrl, session, additionalH
 
       if (finalUrl) {
         try {
+          // First, surface OAuth 2.0 / OIDC error responses (RFC 6749 §4.1.2.1, OIDC Core 1.0
+          // §3.1.2.6). The OP may return `error`/`error_description` in either the query string
+          // or the URL fragment depending on response_mode. Without this, a downstream "no code"
+          // failure silently swallows the OP's actual diagnostic.
+          const errorCallbackUrl = new URL(finalUrl);
+          const errorFromQuery = errorCallbackUrl.searchParams.get('error');
+          const errorFromHash = new URLSearchParams(errorCallbackUrl.hash.substring(1)).get('error');
+          const opError = errorFromQuery || errorFromHash;
+          if (opError) {
+            const descFromQuery = errorCallbackUrl.searchParams.get('error_description');
+            const descFromHash = new URLSearchParams(errorCallbackUrl.hash.substring(1)).get('error_description');
+            const description = descFromQuery || descFromHash || '';
+            const message = description ? `${opError}: ${description}` : opError;
+            return reject(new Error(message));
+          }
           // Handle different grant types differently
           if (grantType === 'implicit') {
             // For implicit flow, tokens are in the URL hash fragment

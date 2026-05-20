@@ -1063,12 +1063,17 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
     additionalAuthorizationParams: additionalParameters?.authorization,
     useRequestObject,
     requestObjectSigningAlg: oAuth.requestObjectSigningAlg,
+    requestObjectTyp: oAuth.requestObjectTyp,
     requestObjectAdditionalClaims: oAuth.requestObjectAdditionalClaims,
     clientSecret,
     privateKey: oAuth.privateKey,
     privateKeyType: oAuth.privateKeyType,
     privateKeyFormat: oAuth.privateKeyFormat,
     keyId: oAuth.keyId,
+    requestObjectPrivateKey: oAuth.requestObjectPrivateKey,
+    requestObjectPrivateKeyType: oAuth.requestObjectPrivateKeyType,
+    requestObjectPrivateKeyFormat: oAuth.requestObjectPrivateKeyFormat,
+    requestObjectKeyId: oAuth.requestObjectKeyId,
     collectionPath: undefined, // private keys are absolute paths in current UI
     issuer: oAuth.issuer,
     accessTokenUrl: url
@@ -1078,7 +1083,18 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
   // ID-Token validation.
   oAuth.nonce = effectiveNonce;
 
-  // 2. PAR (RFC 9126) — POST the request to the OP's pushed_authorization_request_endpoint.
+  // 2. Assemble the authorization URL.
+  //
+  // For PAR (RFC 9126 §4), the URL carries ONLY `client_id` + `request_uri`; the AS reads the
+  // rest from the PAR-stored request.
+  //
+  // For JAR by-value or no-JAR, the URL carries all standard OAuth 2.0 / OIDC parameters
+  // (`response_type`, `client_id`, `redirect_uri`, `scope`, `state`, `nonce`, PKCE, etc.).
+  // OIDC Core 1.0 §6.1 makes `response_type` and `client_id` REQUIRED in the URL even when JAR
+  // is in use; OAuth 2.0 §4.1.1 makes `redirect_uri` part of a valid authorization request.
+  // RFC 9101 §5 specifies that when a parameter appears in both the URL and the Request Object
+  // JWT, the AS MUST use the JWT value — so duplicating them is safe and required for the
+  // request to be processable as a valid OAuth 2.0 authorization request.
   let authorizeUrl;
   let parDebugInfo = null;
   if (usePAR && parEndpoint) {
@@ -1104,24 +1120,14 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
     } catch (error) {
       return Promise.reject(safeStringifyJSON(error?.response?.data || error?.message || 'PAR request failed'));
     }
-  } else if (signedRequest) {
-    // JAR by-value — append `request=<JWT>` to the authz URL.
-    const u = new URL(authorizationUrl);
-    u.searchParams.set('client_id', clientId);
-    u.searchParams.set('request', signedRequest);
-    authorizeUrl = u.toString();
   } else {
-    // No JAR / no PAR — append all params to the authz URL.
+    // No PAR — append all authorization params (and the signed Request Object, if any).
     const u = new URL(authorizationUrl);
     for (const [k, v] of Object.entries(authzParams)) {
       u.searchParams.set(k, v);
     }
-    if (additionalParameters?.authorization?.length) {
-      additionalParameters.authorization.forEach((param) => {
-        if (param.enabled && param.name && param.sendIn === 'queryparams') {
-          u.searchParams.set(param.name, param.value || '');
-        }
-      });
+    if (signedRequest) {
+      u.searchParams.set('request', signedRequest);
     }
     authorizeUrl = u.toString();
   }
@@ -1180,7 +1186,8 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
   try {
     const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig: certsAndProxyConfigForTokenUrl });
     // Hybrid Flow: id_token may also have been returned in the authorization-response fragment.
-    // If the token exchange didn't supply one, fall back to the fragment id_token.
+    // The token-endpoint id_token (back-channel) typically carries more claims than the
+    // fragment id_token (front-channel, OIDC Core §3.3.2.10 minimum). Prefer the back-channel one.
     if (hybridTokens?.id_token && credentials && !credentials.id_token) {
       credentials.id_token = hybridTokens.id_token;
     }

@@ -399,6 +399,18 @@ ${indentString(`response_type: ${auth?.oauth2?.responseType || (auth.oauth2.gran
 }
 ${indentString(`use_request_object: ${(auth?.oauth2?.useRequestObject || false).toString()}`)}${
   auth?.oauth2?.requestObjectSigningAlg ? '\n' + indentString(`request_object_signing_alg: ${auth.oauth2.requestObjectSigningAlg}`) : ''
+}${
+  auth?.oauth2?.requestObjectTyp ? '\n' + indentString(`request_object_typ: ${auth.oauth2.requestObjectTyp}`) : ''
+}${
+  auth?.oauth2?.requestObjectPrivateKey ? '\n' + indentString(`request_object_private_key: ${
+    auth?.oauth2?.requestObjectPrivateKeyType === 'file'
+      ? `@file(${auth.oauth2.requestObjectPrivateKey})`
+      : getValueString(auth.oauth2.requestObjectPrivateKey)
+  }`) : ''
+}${
+  auth?.oauth2?.requestObjectPrivateKeyFormat ? '\n' + indentString(`request_object_private_key_format: ${auth.oauth2.requestObjectPrivateKeyFormat}`) : ''
+}${
+  auth?.oauth2?.requestObjectKeyId ? '\n' + indentString(`request_object_key_id: ${auth.oauth2.requestObjectKeyId}`) : ''
 }
 ${indentString(`use_par: ${(auth?.oauth2?.usePAR || false).toString()}`)}${
   auth?.oauth2?.parEndpoint ? '\n' + indentString(`par_endpoint: ${auth.oauth2.parEndpoint}`) : ''

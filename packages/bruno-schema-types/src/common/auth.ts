@@ -148,7 +148,17 @@ export interface OAuth2 {
   acrValues?: string | null;
   useRequestObject?: boolean | null;
   requestObjectSigningAlg?: TokenEndpointAuthSigningAlg | null;
+  // JWT `typ` header for the Request Object. Defaults to `oauth-authz-req+jwt` per RFC 9101 §10.8.
+  // Some pre-RFC-9101 OPs reject anything other than `JWT` — set this to override.
+  requestObjectTyp?: string | null;
   requestObjectAdditionalClaims?: OAuth2AdditionalClaim[] | null;
+  // Dedicated JAR signing key (independent of the token-endpoint client auth). When unset, falls
+  // back to the client-auth key material for backward compatibility with private_key_jwt clients
+  // that share one key for both purposes.
+  requestObjectPrivateKey?: string | null;
+  requestObjectPrivateKeyType?: 'file' | 'text' | null;
+  requestObjectPrivateKeyFormat?: 'pem' | 'jwk' | null;
+  requestObjectKeyId?: string | null;
   usePAR?: boolean | null;
   parEndpoint?: string | null;
   jwksUri?: string | null;

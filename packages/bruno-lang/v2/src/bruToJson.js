@@ -855,6 +855,10 @@ const sem = grammar.createSemantics().addAttribute('ast', {
     const acrValuesKey = _.find(auth, { name: 'acr_values' });
     const useRequestObjectKey = _.find(auth, { name: 'use_request_object' });
     const requestObjectSigningAlgKey = _.find(auth, { name: 'request_object_signing_alg' });
+    const requestObjectTypKey = _.find(auth, { name: 'request_object_typ' });
+    const requestObjectPrivateKeyKey = _.find(auth, { name: 'request_object_private_key' });
+    const requestObjectPrivateKeyFormatKey = _.find(auth, { name: 'request_object_private_key_format' });
+    const requestObjectKeyIdKey = _.find(auth, { name: 'request_object_key_id' });
     const usePARKey = _.find(auth, { name: 'use_par' });
     const parEndpointKey = _.find(auth, { name: 'par_endpoint' });
     const jwksUriKey = _.find(auth, { name: 'jwks_uri' });
@@ -877,6 +881,13 @@ const sem = grammar.createSemantics().addAttribute('ast', {
     const privateKeyIsFile = rawPrivateKey.startsWith('@file(') && rawPrivateKey.endsWith(')');
     const privateKey = privateKeyIsFile ? rawPrivateKey.slice(6, -1) : rawPrivateKey;
     const privateKeyType = rawPrivateKey ? (privateKeyIsFile ? 'file' : 'text') : '';
+
+    // Same @file(...) convention for the JAR (Request Object) signing key, which is independent
+    // from the token-endpoint client-auth key.
+    const rawRequestObjectPrivateKey = requestObjectPrivateKeyKey?.value || '';
+    const requestObjectPrivateKeyIsFile = rawRequestObjectPrivateKey.startsWith('@file(') && rawRequestObjectPrivateKey.endsWith(')');
+    const requestObjectPrivateKey = requestObjectPrivateKeyIsFile ? rawRequestObjectPrivateKey.slice(6, -1) : rawRequestObjectPrivateKey;
+    const requestObjectPrivateKeyType = rawRequestObjectPrivateKey ? (requestObjectPrivateKeyIsFile ? 'file' : 'text') : '';
     return {
       auth: {
         oauth2:
@@ -1004,6 +1015,11 @@ const sem = grammar.createSemantics().addAttribute('ast', {
                           acrValues: acrValuesKey?.value || '',
                           useRequestObject: useRequestObjectKey ? safeParseJson(useRequestObjectKey?.value) ?? false : false,
                           requestObjectSigningAlg: requestObjectSigningAlgKey?.value || '',
+                          requestObjectTyp: requestObjectTypKey?.value || '',
+                          requestObjectPrivateKey,
+                          requestObjectPrivateKeyType,
+                          requestObjectPrivateKeyFormat: requestObjectPrivateKeyFormatKey?.value || '',
+                          requestObjectKeyId: requestObjectKeyIdKey?.value || '',
                           usePAR: usePARKey ? safeParseJson(usePARKey?.value) ?? false : false,
                           parEndpoint: parEndpointKey?.value || '',
                           jwksUri: jwksUriKey?.value || '',

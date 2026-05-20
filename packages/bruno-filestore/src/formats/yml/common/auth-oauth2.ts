@@ -296,16 +296,24 @@ const buildImplicitFlow = (oauth: BrunoOAuth2): OAuth2ImplicitFlow => {
   return flow;
 };
 
-// Bruno-namespaced extension carried inside the OpenCollection auth block so OAuth2 client-auth
-// fields that OpenCollection doesn't model natively (RFC 7591 / OIDC §9 methods beyond basic /
-// post, JWT-bearer assertion config, mTLS) round-trip through yml collections. Older Bruno builds
-// without these features just see the OpenCollection-modeled subset and ignore the extension.
+// Bruno-namespaced extension carried inside the OpenCollection auth block so OAuth2 and OIDC fields
+// that OpenCollection doesn't model natively (RFC 7591 / OIDC §9 client-auth methods beyond basic /
+// post, JWT-bearer assertion config, mTLS, OIDC params, JAR / PAR / Discovery) round-trip through
+// yml collections. Older Bruno builds without these features just see the OpenCollection-modeled
+// subset and ignore the extension.
 const BRUNO_OAUTH2_EXTENSION_KEY = 'x-bruno-oauth2';
 
 const OAUTH2_EXTENSION_FIELDS: (keyof BrunoOAuth2)[] = [
+  // Client-auth methods beyond OpenCollection's basic / post:
   'tokenEndpointAuthMethod', 'tokenEndpointAuthSigningAlg',
   'privateKey', 'privateKeyType', 'privateKeyFormat', 'keyId',
-  'audience', 'assertionLifetime', 'additionalClaims'
+  'audience', 'assertionLifetime', 'additionalClaims',
+  // OIDC params:
+  'issuer', 'responseType', 'responseMode', 'nonce', 'prompt', 'loginHint', 'maxAge', 'acrValues',
+  // JAR / PAR / Discovery:
+  'useRequestObject', 'requestObjectSigningAlg', 'requestObjectTyp', 'requestObjectAdditionalClaims',
+  'requestObjectPrivateKey', 'requestObjectPrivateKeyType', 'requestObjectPrivateKeyFormat', 'requestObjectKeyId',
+  'usePAR', 'parEndpoint', 'jwksUri', 'userinfoEndpoint', 'endSessionEndpoint'
 ];
 
 // `client_secret_basic` and `client_secret_post` are losslessly representable via OpenCollection's
@@ -313,9 +321,11 @@ const OAUTH2_EXTENSION_FIELDS: (keyof BrunoOAuth2)[] = [
 const isPlacementRepresentable = (method?: string | null): boolean =>
   method === 'client_secret_basic' || method === 'client_secret_post';
 
-// Fields that only make sense when the active method signs a JWT (client_secret_jwt /
-// private_key_jwt). Skipped on serialization when the active method is something else, so a
-// previously-configured JWT method's material doesn't linger in yml after the user switches away.
+// Fields that only make sense when the active method signs a JWT for client authentication
+// (client_secret_jwt / private_key_jwt). Skipped on serialization when the active method is
+// something else, so a previously-configured JWT method's material doesn't linger in yml after
+// the user switches away. JAR/PAR request-object fields are deliberately NOT in this set — they
+// sign the authorization request and are independent of the token-endpoint client-auth method.
 const JWT_ONLY_EXTENSION_FIELDS: Set<keyof BrunoOAuth2> = new Set([
   'tokenEndpointAuthSigningAlg',
   'keyId',
@@ -334,6 +344,12 @@ const isJwtMethod = (method?: string | null): boolean =>
 
 const oauth2ExtensionFromBruno = (oauth: BrunoOAuth2): Record<string, unknown> | undefined => {
   const ext: Record<string, unknown> = {};
+  const grantType = oauth.grantType as string | undefined;
+  // The OIDC grant types are serialised as `flow: authorization_code` for OpenCollection
+  // compatibility; we need to remember the original grantType to restore it on read.
+  if (grantType === 'openid_code' || grantType === 'openid_hybrid') {
+    ext.grantType = grantType;
+  }
   const jwtActive = isJwtMethod(oauth.tokenEndpointAuthMethod);
   const privateKeyJwtActive = oauth.tokenEndpointAuthMethod === 'private_key_jwt';
   for (const k of OAUTH2_EXTENSION_FIELDS) {
@@ -369,6 +385,13 @@ export const toOpenCollectionOAuth2 = (oauth?: BrunoOAuth2 | null): AuthOAuth2 |
       flow = buildAuthorizationCodeFlow(oauth); break;
     case 'implicit':
       flow = buildImplicitFlow(oauth); break;
+    case 'openid_code':
+    case 'openid_hybrid':
+      // OpenCollection doesn't model OIDC. Serialise as authorization_code so the OAuth2 fields
+      // OpenCollection does understand (endpoints, client creds, scope, state, PKCE, token
+      // placement) survive; the Bruno extension below restores the OIDC grant type on read.
+      flow = buildAuthorizationCodeFlow(oauth);
+      break;
     default:
       console.warn(`toOpenCollectionOAuth2: Unsupported OAuth2 grant type "${oauth.grantType}".`);
       return undefined;
@@ -648,12 +671,17 @@ export const toBrunoOAuth2 = (oauth: AuthOAuth2 | null | undefined): BrunoOAuth2
     }
   }
 
-  // Restore any Bruno-extended OAuth2 client-auth state from the namespaced extension. Carries
-  // anything OpenCollection doesn't model natively (advanced client-auth methods, JWT-bearer
-  // assertion config, mTLS). Whitelisted to OAUTH2_EXTENSION_FIELDS so a hand-edited extension
-  // can't override canonical flow fields like grantType or the endpoint URLs.
+  // Restore any Bruno-extended OAuth2 / OIDC state from the namespaced extension. Carries
+  // everything OpenCollection doesn't model natively (advanced client-auth methods, JWT-bearer
+  // assertion config, mTLS, OIDC params, JAR/PAR/etc). Whitelisted to OAUTH2_EXTENSION_FIELDS
+  // plus an explicit grantType escape for openid_code / openid_hybrid (the only canonical field
+  // that legitimately needs to be overridden by the extension); other canonical fields like the
+  // endpoint URLs can't be silently rewritten by a hand-edited extension.
   const ext = (oauth as any)[BRUNO_OAUTH2_EXTENSION_KEY] as Record<string, unknown> | undefined;
   if (ext) {
+    if (ext.grantType === 'openid_code' || ext.grantType === 'openid_hybrid') {
+      (brunoOAuth as any).grantType = ext.grantType;
+    }
     for (const k of OAUTH2_EXTENSION_FIELDS) {
       if (k in ext) {
         (brunoOAuth as any)[k] = ext[k];

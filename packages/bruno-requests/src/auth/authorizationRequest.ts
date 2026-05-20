@@ -21,6 +21,7 @@ import {
   signJwt,
   resolveJwtSigningKey,
   applyTokenEndpointAuth,
+  parseClaimValue,
   type TokenEndpointAuthMethod,
   type TokenEndpointAuthSigningAlg,
   type TokenEndpointAuthOptions
@@ -64,14 +65,25 @@ export interface AuthorizationRequestOptions {
   // JAR — RFC 9101
   useRequestObject?: boolean;
   requestObjectSigningAlg?: TokenEndpointAuthSigningAlg;
+  // JWT `typ` header for the Request Object. Defaults to `oauth-authz-req+jwt` (RFC 9101 §10.8);
+  // can be overridden to `JWT` for pre-RFC-9101 OPs (e.g. Keycloak in some configurations).
+  requestObjectTyp?: string;
   requestObjectAdditionalClaims?: AuthorizationRequestAdditionalClaim[];
 
-  // Key material (same fields used for client_secret_jwt / private_key_jwt at the token endpoint).
+  // Token-endpoint client-auth signing material — used as a fallback when no dedicated JAR key is
+  // configured (the common case: one key for both purposes in private_key_jwt deployments).
   clientSecret?: string;
   privateKey?: string;
   privateKeyType?: 'text' | 'file' | '';
   privateKeyFormat?: 'pem' | 'jwk' | '';
   keyId?: string;
+  // Dedicated JAR signing material. When set, these win over the client-auth fields. Required when
+  // the client uses a non-JWT client-auth method (mTLS, client_secret_basic/post) but still wants
+  // to sign authorization requests.
+  requestObjectPrivateKey?: string;
+  requestObjectPrivateKeyType?: 'text' | 'file' | '';
+  requestObjectPrivateKeyFormat?: 'pem' | 'jwk' | '';
+  requestObjectKeyId?: string;
   collectionPath?: string;
 
   // `aud` of the Request Object (OIDC OP issuer). Falls back to `accessTokenUrl`.
@@ -133,13 +145,19 @@ export const buildAuthorizationRequest = async (
   // 4. JAR — sign the params into a JWT.
   if (opts.useRequestObject) {
     const algorithm = (opts.requestObjectSigningAlg || 'RS256') as TokenEndpointAuthSigningAlg;
+    // Prefer the dedicated JAR signing material; fall back to the client-auth key when no
+    // dedicated key is configured (so private_key_jwt clients that share one key for both
+    // purposes keep working with zero extra config).
+    const hasDedicatedKey
+      = (opts.requestObjectPrivateKey && opts.requestObjectPrivateKey.trim() !== '')
+        || algorithm.startsWith('HS'); // HS algs always use clientSecret; "dedicated" doesn't apply
     const { signingKey, effectiveKeyId } = await resolveJwtSigningKey(
       {
         clientSecret: opts.clientSecret,
-        privateKey: opts.privateKey,
-        privateKeyType: opts.privateKeyType,
-        privateKeyFormat: opts.privateKeyFormat,
-        keyId: opts.keyId,
+        privateKey: hasDedicatedKey ? opts.requestObjectPrivateKey : opts.privateKey,
+        privateKeyType: hasDedicatedKey ? opts.requestObjectPrivateKeyType : opts.privateKeyType,
+        privateKeyFormat: hasDedicatedKey ? opts.requestObjectPrivateKeyFormat : opts.privateKeyFormat,
+        keyId: hasDedicatedKey ? opts.requestObjectKeyId : opts.keyId,
         collectionPath: opts.collectionPath
       },
       algorithm
@@ -161,16 +179,20 @@ export const buildAuthorizationRequest = async (
     };
 
     // User-defined additional claims override above (same semantics as token-endpoint additionalClaims).
+    // Values that look like JSON objects/arrays are auto-parsed so callers can carry nested
+    // structures — e.g. OIDC Core 1.0 §5.5 `claims` request parameter.
     for (const claim of opts.requestObjectAdditionalClaims || []) {
       if (claim?.enabled && claim?.name) {
-        claims[claim.name] = claim.value ?? '';
+        claims[claim.name] = parseClaimValue(claim.value);
       }
     }
 
     const signedRequest = await signJwt(
       {
         algorithm,
-        protectedHeaderType: 'oauth-authz-req+jwt',
+        protectedHeaderType: opts.requestObjectTyp && opts.requestObjectTyp.trim() !== ''
+          ? opts.requestObjectTyp
+          : 'oauth-authz-req+jwt',
         keyId: effectiveKeyId,
         claims
       },

@@ -3,7 +3,8 @@ export { getOAuth2Token } from './oauth2-helper';
 export {
   applyTokenEndpointAuth,
   signJwt,
-  resolveJwtSigningKey
+  resolveJwtSigningKey,
+  parseClaimValue
 } from './tokenEndpointAuth';
 export type {
   TokenEndpointAuthMethod,

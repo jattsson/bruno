@@ -8,6 +8,7 @@ import { useDispatch } from 'react-redux';
 import OAuth2PasswordCredentials from 'components/RequestPane/Auth/OAuth2/PasswordCredentials/index';
 import OAuth2ClientCredentials from 'components/RequestPane/Auth/OAuth2/ClientCredentials/index';
 import OAuth2Implicit from 'components/RequestPane/Auth/OAuth2/Implicit/index';
+import OpenIDConnect from 'components/RequestPane/Auth/OAuth2/OpenIDConnect/index';
 import GrantTypeSelector from 'components/RequestPane/Auth/OAuth2/GrantTypeSelector/index';
 
 const GrantTypeComponentMap = ({ collection }) => {
@@ -32,6 +33,10 @@ const GrantTypeComponentMap = ({ collection }) => {
       break;
     case 'implicit':
       return <OAuth2Implicit save={save} request={request} updateAuth={updateCollectionAuth} collection={collection} />;
+      break;
+    case 'openid_code':
+    case 'openid_hybrid':
+      return <OpenIDConnect save={save} request={request} updateAuth={updateCollectionAuth} collection={collection} grantType={grantType} />;
       break;
     default:
       return <div>TBD</div>;

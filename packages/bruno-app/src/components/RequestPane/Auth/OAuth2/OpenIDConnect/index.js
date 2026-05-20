@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import path from 'path';
 import { useDetectSensitiveField } from 'hooks/useDetectSensitiveField';
 import get from 'lodash/get';
 import toast from 'react-hot-toast';
 import { useTheme } from 'providers/Theme';
 import { useDispatch, useSelector } from 'react-redux';
-import { IconCaretDown, IconSettings, IconKey, IconHelp, IconAdjustmentsHorizontal, IconSearch } from '@tabler/icons';
+import { IconCaretDown, IconSettings, IconKey, IconHelp, IconAdjustmentsHorizontal, IconSearch, IconFile, IconUpload, IconX } from '@tabler/icons';
 import MenuDropdown from 'ui/MenuDropdown';
 import SingleLineEditor from 'components/SingleLineEditor';
 import StyledWrapper from './StyledWrapper';
@@ -13,8 +14,9 @@ import Oauth2TokenViewer from '../Oauth2TokenViewer/index';
 import Oauth2ActionButtons from '../Oauth2ActionButtons/index';
 import AdditionalParams from '../AdditionalParams/index';
 import ClientAuthMethod from '../ClientAuthMethod/index';
+import RequestObjectClaims from '../RequestObjectClaims/index';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
-import { discoverOidc } from 'providers/ReduxStore/slices/collections/actions';
+import { browseFiles, discoverOidc } from 'providers/ReduxStore/slices/collections/actions';
 import { savePreferences } from 'providers/ReduxStore/slices/app';
 
 // Signing algorithms suitable for the JAR Request Object (RFC 9101). FAPI 1/2 require asymmetric
@@ -99,7 +101,20 @@ const OpenIDConnect = ({ save, item = {}, request, handleRun, updateAuth, collec
 
   const refreshTokenUrlAvailable = refreshTokenUrl?.trim() !== '';
   const isAutoRefreshDisabled = !refreshTokenUrlAvailable;
-  const hasSigningKey = Boolean(oAuth?.privateKey || oAuth?.clientSecret);
+
+  const requestObjectAlg = requestObjectSigningAlg || 'RS256';
+  const usesHmacForRequestObject = requestObjectAlg.startsWith('HS');
+  const requestObjectKeyFormat = oAuth.requestObjectPrivateKeyFormat || 'pem';
+  const requestObjectKeyType = oAuth.requestObjectPrivateKeyType || 'text';
+  const requestObjectPrivateKey = oAuth.requestObjectPrivateKey || '';
+  const requestObjectKeySensitivity = isSensitive(requestObjectPrivateKey);
+  const isRequestObjectFileBacked = requestObjectKeyType === 'file' && requestObjectPrivateKey;
+  // For HS* algorithms, JAR signs with clientSecret (the user's existing token-endpoint secret).
+  // For asymmetric algorithms, JAR uses the dedicated requestObjectPrivateKey if set, otherwise
+  // falls back to the client-auth privateKey for parity with the original behaviour.
+  const hasRequestObjectKey
+    = (usesHmacForRequestObject && Boolean(oAuth?.clientSecret))
+      || (!usesHmacForRequestObject && (Boolean(requestObjectPrivateKey) || Boolean(oAuth?.privateKey)));
 
   const handleSave = () => { save(); };
 
@@ -141,6 +156,21 @@ const OpenIDConnect = ({ save, item = {}, request, handleRun, updateAuth, collec
         toast.error('Failed to update preference');
       });
   };
+
+  const handleBrowseRequestObjectKey = () => {
+    const filters = requestObjectKeyFormat === 'jwk'
+      ? [{ name: 'JWK', extensions: ['json', 'jwk'] }, { name: 'All Files', extensions: ['*'] }]
+      : [{ name: 'PEM', extensions: ['pem', 'key'] }, { name: 'All Files', extensions: ['*'] }];
+    dispatch(browseFiles(filters, []))
+      .then((filePaths) => {
+        if (filePaths && filePaths.length > 0) {
+          patchOAuth({ requestObjectPrivateKey: filePaths[0], requestObjectPrivateKeyType: 'file' });
+        }
+      })
+      .catch((err) => console.error(err));
+  };
+
+  const handleClearRequestObjectKey = () => patchOAuth({ requestObjectPrivateKey: '', requestObjectPrivateKeyType: 'text' });
 
   const handleDiscover = async () => {
     if (!issuer || issuer.trim() === '') {
@@ -447,24 +477,135 @@ const OpenIDConnect = ({ save, item = {}, request, handleRun, updateAuth, collec
                   id: alg, label: alg,
                   onClick: () => handleChange('requestObjectSigningAlg', alg)
                 }))}
-                selectedItemId={requestObjectSigningAlg || 'RS256'}
+                selectedItemId={requestObjectAlg}
                 placement="bottom-end"
               >
                 <div className="flex items-center justify-end token-placement-label select-none">
-                  {requestObjectSigningAlg || 'RS256'}
+                  {requestObjectAlg}
                   <IconCaretDown className="caret ml-1 mr-1" size={14} strokeWidth={2} />
                 </div>
               </MenuDropdown>
             </div>
           </div>
-          {!hasSigningKey && (
-            <div className="flex items-start gap-4 w-full" key="request-object-warning">
+          <div className="flex items-center gap-4 w-full" key="input-request-object-typ">
+            <label className="block min-w-[140px]">JWT typ Header</label>
+            <div className="single-line-editor-wrapper flex-1">
+              <SingleLineEditor
+                value={oAuth.requestObjectTyp || ''}
+                theme={storedTheme}
+                onSave={handleSave}
+                onChange={(val) => handleChange('requestObjectTyp', val)}
+                onRun={handleRun}
+                collection={collection}
+                item={item}
+                placeholder="oauth-authz-req+jwt (RFC 9101 §10.8 default — override to 'JWT' for older OPs)"
+                isCompact
+              />
+            </div>
+          </div>
+
+          {usesHmacForRequestObject ? (
+            <div className="flex items-start gap-4 w-full" key="request-object-hmac-note">
               <label className="block min-w-[140px]"></label>
-              <div className="flex-1 text-xs oauth2-mtls-warning">
-                JAR requires a signing key. Configure a private key (for RS/PS/ES/EdDSA) or a client secret (for HS*) under <strong>Client Authentication</strong>.
+              <div className="flex-1 text-xs">
+                HMAC algorithms sign with the <strong>Client Secret</strong> configured under Client Authentication. No separate key needed.
               </div>
             </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 w-full" key="input-request-object-key-format">
+                <label className="block min-w-[140px]">Key Format</label>
+                <div className="inline-flex items-center cursor-pointer token-placement-selector">
+                  <MenuDropdown
+                    items={[
+                      { id: 'pem', label: 'PEM', onClick: () => handleChange('requestObjectPrivateKeyFormat', 'pem') },
+                      { id: 'jwk', label: 'JWK', onClick: () => handleChange('requestObjectPrivateKeyFormat', 'jwk') }
+                    ]}
+                    selectedItemId={requestObjectKeyFormat}
+                    placement="bottom-end"
+                  >
+                    <div className="flex items-center justify-end token-placement-label select-none">
+                      {requestObjectKeyFormat.toUpperCase()}
+                      <IconCaretDown className="caret ml-1 mr-1" size={14} strokeWidth={2} />
+                    </div>
+                  </MenuDropdown>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 w-full" key="input-request-object-private-key">
+                <label className="block min-w-[140px]">Private Key</label>
+                {isRequestObjectFileBacked ? (
+                  <div className="private-key-editor-wrapper flex-1 flex items-center gap-2">
+                    <IconFile size={16} className="oauth2-icon flex-shrink-0" />
+                    <span className="truncate flex-1" title={requestObjectPrivateKey}>{path.basename(requestObjectPrivateKey)}</span>
+                    <button className="flex-shrink-0 oauth2-icon cursor-pointer" onClick={handleBrowseRequestObjectKey} title="Change file" type="button">
+                      <IconUpload size={14} />
+                    </button>
+                    <button className="flex-shrink-0 oauth2-icon cursor-pointer" onClick={handleClearRequestObjectKey} title="Clear file" type="button">
+                      <IconX size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-1 flex-col gap-2">
+                    <div className="single-line-editor-wrapper flex-1 flex items-center">
+                      <SingleLineEditor
+                        value={requestObjectPrivateKey}
+                        theme={storedTheme}
+                        onSave={handleSave}
+                        onChange={(val) => handleChange('requestObjectPrivateKey', val)}
+                        onRun={handleRun}
+                        collection={collection}
+                        item={item}
+                        isSecret
+                        isCompact
+                      />
+                      {requestObjectKeySensitivity.showWarning && (
+                        <SensitiveFieldWarning fieldName="requestObjectPrivateKey" warningMessage={requestObjectKeySensitivity.warningMessage} />
+                      )}
+                    </div>
+                    <div>
+                      <button className="flex items-center gap-1 oauth2-icon cursor-pointer text-link" onClick={handleBrowseRequestObjectKey} title="Select file" type="button">
+                        <IconUpload size={14} />
+                        <span className="text-xs">Select file…</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-4 w-full" key="input-request-object-key-id">
+                <label className="block min-w-[140px]">Key ID</label>
+                <div className="single-line-editor-wrapper flex-1">
+                  <SingleLineEditor
+                    value={oAuth.requestObjectKeyId || ''}
+                    theme={storedTheme}
+                    onSave={handleSave}
+                    onChange={(val) => handleChange('requestObjectKeyId', val)}
+                    onRun={handleRun}
+                    collection={collection}
+                    item={item}
+                    isCompact
+                  />
+                </div>
+              </div>
+              {!hasRequestObjectKey && (
+                <div className="flex items-start gap-4 w-full" key="request-object-warning">
+                  <label className="block min-w-[140px]"></label>
+                  <div className="flex-1 text-xs oauth2-mtls-warning">
+                    JAR with {requestObjectAlg} requires a private key — paste one above or pick a file. (If you don't set one here, Bruno falls back to the key configured under Client Authentication for backward compatibility with private_key_jwt clients that share a single key for both purposes.)
+                  </div>
+                </div>
+              )}
+            </>
           )}
+
+          <div className="flex items-start gap-4 w-full" key="input-request-object-claims">
+            <label className="block min-w-[140px] mt-1">Custom Claims</label>
+            <div className="flex-1">
+              <RequestObjectClaims
+                value={oAuth.requestObjectAdditionalClaims || []}
+                onChange={(claims) => handleChange('requestObjectAdditionalClaims', claims)}
+              />
+            </div>
+          </div>
         </>
       )}
 

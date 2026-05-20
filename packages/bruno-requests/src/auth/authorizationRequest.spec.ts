@@ -154,6 +154,44 @@ describe('buildAuthorizationRequest', () => {
       expect(payload.custom_claim).toBe('value');
       expect(payload.disabled_claim).toBeUndefined();
     });
+
+    it('parses JSON-object values into nested structures (OIDC `claims` parameter)', async () => {
+      const result = await buildAuthorizationRequest({
+        clientId: CLIENT_ID, redirectUri: REDIRECT_URI,
+        responseType: 'code',
+        useRequestObject: true, requestObjectSigningAlg: 'HS256',
+        clientSecret: secret,
+        issuer: ISSUER,
+        requestObjectAdditionalClaims: [
+          {
+            name: 'claims',
+            value: '{"id_token":{"acr":{"essential":true,"values":["urn:fapi:1"]}}}',
+            enabled: true
+          },
+          { name: 'array_claim', value: '["a","b","c"]', enabled: true },
+          { name: 'string_claim', value: 'urn:example:foo', enabled: true }
+        ]
+      });
+      const { payload } = await jwtVerify(result.signedRequest!, new TextEncoder().encode(secret));
+      expect(payload.claims).toEqual({ id_token: { acr: { essential: true, values: ['urn:fapi:1'] } } });
+      expect(payload.array_claim).toEqual(['a', 'b', 'c']);
+      expect(payload.string_claim).toBe('urn:example:foo');
+    });
+
+    it('keeps malformed JSON as a plain string (best-effort fallback)', async () => {
+      const result = await buildAuthorizationRequest({
+        clientId: CLIENT_ID, redirectUri: REDIRECT_URI,
+        responseType: 'code',
+        useRequestObject: true, requestObjectSigningAlg: 'HS256',
+        clientSecret: secret,
+        issuer: ISSUER,
+        requestObjectAdditionalClaims: [
+          { name: 'broken_json', value: '{not valid', enabled: true }
+        ]
+      });
+      const { payload } = await jwtVerify(result.signedRequest!, new TextEncoder().encode(secret));
+      expect(payload.broken_json).toBe('{not valid');
+    });
   });
 
   describe('JAR — RSA (RS256 with PEM private key)', () => {
