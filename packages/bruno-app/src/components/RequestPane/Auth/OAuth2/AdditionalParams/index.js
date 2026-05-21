@@ -20,7 +20,7 @@ const AdditionalParams = ({ item = {}, request, updateAuth, collection, handleSa
   } = oAuth;
 
   const [activeTab, setActiveTab] = useState(
-    (grantType == 'authorization_code' || grantType == 'implicit') ? 'authorization' : 'token'
+    ['authorization_code', 'implicit', 'openid_code', 'openid_hybrid'].includes(grantType) ? 'authorization' : 'token'
   );
 
   const isEmptyParam = (param) => {
@@ -147,7 +147,9 @@ const AdditionalParams = ({ item = {}, request, updateAuth, collection, handleSa
       authorization_code: ['authorization', 'token', 'refresh'],
       implicit: ['authorization'],
       password: ['token', 'refresh'],
-      client_credentials: ['token', 'refresh']
+      client_credentials: ['token', 'refresh'],
+      openid_code: ['authorization', 'token', 'refresh'],
+      openid_hybrid: ['authorization', 'token', 'refresh']
     };
     return tabConfig[grantType] || ['token', 'refresh'];
   };
@@ -305,5 +307,15 @@ const sendInOptionsMap = {
   },
   implicit: {
     authorization: ['headers', 'queryparams']
+  },
+  openid_code: {
+    authorization: ['headers', 'queryparams'],
+    token: ['headers', 'queryparams', 'body'],
+    refresh: ['headers', 'queryparams', 'body']
+  },
+  openid_hybrid: {
+    authorization: ['headers', 'queryparams'],
+    token: ['headers', 'queryparams', 'body'],
+    refresh: ['headers', 'queryparams', 'body']
   }
 };
