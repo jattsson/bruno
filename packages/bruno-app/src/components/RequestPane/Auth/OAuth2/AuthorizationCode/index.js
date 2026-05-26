@@ -3,8 +3,7 @@ import { useDetectSensitiveField } from 'hooks/useDetectSensitiveField';
 import get from 'lodash/get';
 import { useTheme } from 'providers/Theme';
 import { useDispatch, useSelector } from 'react-redux';
-import { IconCaretDown, IconSettings, IconKey, IconHelp, IconAdjustmentsHorizontal } from '@tabler/icons';
-import MenuDropdown from 'ui/MenuDropdown';
+import { IconSettings } from '@tabler/icons';
 import SingleLineEditor from 'components/SingleLineEditor';
 import StyledWrapper from './StyledWrapper';
 import { inputsConfig } from './inputsConfig';
@@ -12,9 +11,10 @@ import Oauth2TokenViewer from '../Oauth2TokenViewer/index';
 import Oauth2ActionButtons from '../Oauth2ActionButtons/index';
 import AdditionalParams from '../AdditionalParams/index';
 import ClientAuthMethod from '../ClientAuthMethod/index';
+import Oauth2TokenSection from '../Oauth2TokenSection/index';
+import Oauth2AdvancedSettings from '../Oauth2AdvancedSettings/index';
+import Oauth2UseSystemBrowserToggle from '../Oauth2UseSystemBrowserToggle/index';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
-import { savePreferences } from 'providers/ReduxStore/slices/app';
-import toast from 'react-hot-toast';
 
 const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAuth, collection, folder }) => {
   const dispatch = useDispatch();
@@ -23,20 +23,7 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
   const useSystemBrowser = get(preferences, 'request.oauth2.useSystemBrowser', false);
   const { isSensitive } = useDetectSensitiveField(collection);
   const oAuth = get(request, 'auth.oauth2', {});
-  const {
-    callbackUrl,
-    accessTokenUrl,
-    pkce,
-    credentialsId,
-    tokenPlacement,
-    tokenSource,
-    refreshTokenUrl,
-    autoRefreshToken,
-    autoFetchToken
-  } = oAuth;
-
-  const refreshTokenUrlAvailable = refreshTokenUrl?.trim() !== '';
-  const isAutoRefreshDisabled = !refreshTokenUrlAvailable;
+  const { callbackUrl, accessTokenUrl, credentialsId } = oAuth;
 
   const handleSave = () => { save(); };
 
@@ -59,29 +46,6 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
 
   const handlePKCEToggle = () => {
     handleChange('pkce', !Boolean(oAuth?.pkce));
-  };
-
-  const handleUseSystemBrowserToggle = (e) => {
-    const newValue = e.target.checked;
-    dispatch(
-      savePreferences({
-        ...preferences,
-        request: {
-          ...preferences.request,
-          oauth2: {
-            ...preferences.request.oauth2,
-            useSystemBrowser: newValue
-          }
-        }
-      })
-    )
-      .then(() => {
-        toast.success('Preference updated successfully');
-      })
-      .catch((err) => {
-        console.error(err);
-        toast.error('Failed to update preference');
-      });
   };
 
   return (
@@ -113,26 +77,7 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-4 w-full" key="input-use-system-browser">
-        <label className="block min-w-[140px]"></label>
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={Boolean(useSystemBrowser)}
-            onChange={handleUseSystemBrowserToggle}
-            className="cursor-pointer"
-          />
-          <label
-            className="block cursor-pointer"
-            onClick={(e) => {
-              e.preventDefault();
-              handleUseSystemBrowserToggle({ target: { checked: !useSystemBrowser } });
-            }}
-          >
-            Use system browser for OAuth
-          </label>
-        </div>
-      </div>
+      <Oauth2UseSystemBrowserToggle />
       {inputsConfig
         .filter((input) => input.key !== 'clientSecret')
         .map((input) => {
@@ -178,169 +123,22 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
           onChange={handlePKCEToggle}
         />
       </div>
-      <div className="flex items-center gap-2.5 mt-2">
-        <div className="flex items-center px-2.5 py-1.5 oauth2-icon-container rounded-md">
-          <IconKey size={14} className="oauth2-icon" />
-        </div>
-        <span className="oauth2-section-label">
-          Token
-        </span>
-      </div>
-      <div className="flex items-center gap-4 w-full" key="input-token-type">
-        <label className="block min-w-[140px]">Token Source</label>
-        <div className="inline-flex items-center cursor-pointer token-placement-selector">
-          <MenuDropdown
-            items={[
-              { id: 'access_token', label: 'Access Token', onClick: () => handleChange('tokenSource', 'access_token') },
-              { id: 'id_token', label: 'ID Token', onClick: () => handleChange('tokenSource', 'id_token') }
-            ]}
-            selectedItemId={tokenSource}
-            placement="bottom-end"
-          >
-            <div className="flex items-center justify-end token-placement-label select-none">
-              {tokenSource === 'id_token' ? 'ID Token' : 'Access Token'}
-              <IconCaretDown className="caret ml-1 mr-1" size={14} strokeWidth={2} />
-            </div>
-          </MenuDropdown>
-        </div>
-      </div>
-      <div className="flex items-center gap-4 w-full" key="input-token-name">
-        <label className="block min-w-[140px]">Token ID</label>
-        <div className="single-line-editor-wrapper flex-1">
-          <SingleLineEditor
-            value={oAuth['credentialsId'] || ''}
-            theme={storedTheme}
-            onSave={handleSave}
-            onChange={(val) => handleChange('credentialsId', val)}
-            onRun={handleRun}
-            collection={collection}
-            item={item}
-            isCompact
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-4 w-full" key="input-token-placement">
-        <label className="block min-w-[140px]">Add token to</label>
-        <div className="inline-flex items-center cursor-pointer token-placement-selector">
-          <MenuDropdown
-            items={[
-              { id: 'header', label: 'Header', onClick: () => handleChange('tokenPlacement', 'header') },
-              { id: 'url', label: 'URL', onClick: () => handleChange('tokenPlacement', 'url') }
-            ]}
-            selectedItemId={tokenPlacement}
-            placement="bottom-end"
-          >
-            <div className="flex items-center justify-end token-placement-label select-none">
-              {tokenPlacement == 'url' ? 'URL' : 'Headers'}
-              <IconCaretDown className="caret ml-1 mr-1" size={14} strokeWidth={2} />
-            </div>
-          </MenuDropdown>
-        </div>
-      </div>
-      {
-        tokenPlacement === 'header'
-          ? (
-              <div className="flex items-center gap-4 w-full" key="input-token-prefix">
-                <label className="block min-w-[140px]">Header Prefix</label>
-                <div className="single-line-editor-wrapper flex-1">
-                  <SingleLineEditor
-                    value={oAuth['tokenHeaderPrefix'] || ''}
-                    theme={storedTheme}
-                    onSave={handleSave}
-                    onChange={(val) => handleChange('tokenHeaderPrefix', val)}
-                    onRun={handleRun}
-                    collection={collection}
-                    isCompact
-                  />
-                </div>
-              </div>
-            )
-          : (
-              <div className="flex items-center gap-4 w-full" key="input-token-query-param-key">
-                <label className="block min-w-[140px]">Query Param Key</label>
-                <div className="single-line-editor-wrapper flex-1">
-                  <SingleLineEditor
-                    value={oAuth['tokenQueryKey'] || ''}
-                    theme={storedTheme}
-                    onSave={handleSave}
-                    onChange={(val) => handleChange('tokenQueryKey', val)}
-                    onRun={handleRun}
-                    collection={collection}
-                    isCompact
-                  />
-                </div>
-              </div>
-            )
-      }
-      <div className="flex items-center gap-2.5 mt-4 mb-2">
-        <div className="flex items-center px-2.5 py-1.5 oauth2-icon-container rounded-md">
-          <IconAdjustmentsHorizontal size={14} className="oauth2-icon" />
-        </div>
-        <span className="oauth2-section-label">
-          Advanced Settings
-        </span>
-      </div>
-
-      <div className="flex items-center gap-4 w-full mb-4">
-        <label className="block min-w-[140px]">Refresh Token URL</label>
-        <div className="single-line-editor-wrapper flex-1">
-          <SingleLineEditor
-            value={get(request, 'auth.oauth2.refreshTokenUrl', '')}
-            theme={storedTheme}
-            onSave={handleSave}
-            onChange={(val) => handleChange('refreshTokenUrl', val)}
-            collection={collection}
-            item={item}
-            isCompact
-          />
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2.5 mt-4">
-        <div className="flex items-center px-2.5 py-1.5 oauth2-icon-container rounded-md">
-          <IconSettings size={14} className="oauth2-icon" />
-        </div>
-        <span className="font-medium">Settings</span>
-      </div>
-
-      {/* Automatically Fetch Token */}
-      <div className="flex items-center gap-4 w-full">
-        <input
-          type="checkbox"
-          checked={Boolean(autoFetchToken)}
-          onChange={(e) => handleChange('autoFetchToken', e.target.checked)}
-          className="cursor-pointer ml-1"
-        />
-        <label className="block min-w-[140px]">Automatically fetch token if not found</label>
-        <div className="flex items-center gap-2">
-          <div className="relative group cursor-pointer">
-            <IconHelp size={16} className="text-gray-500" />
-            <span className="group-hover:opacity-100 pointer-events-none opacity-0 max-w-60 absolute left-0 bottom-full mb-1 w-max p-2 bg-gray-700 text-white text-xs rounded-md transition-opacity duration-200">
-              Automatically fetch a new token when you try to access a resource and don't have one.
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Auto Refresh Token (With Refresh URL) */}
-      <div className="flex items-center gap-4 w-full">
-        <input
-          type="checkbox"
-          checked={Boolean(autoRefreshToken)}
-          onChange={(e) => handleChange('autoRefreshToken', e.target.checked)}
-          className={`cursor-pointer ml-1 ${isAutoRefreshDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-          disabled={isAutoRefreshDisabled}
-        />
-        <label className={`block min-w-[140px] ${isAutoRefreshDisabled ? 'text-gray-500' : ''}`}>Auto refresh token (with refresh URL)</label>
-        <div className="flex items-center gap-2">
-          <div className="relative group cursor-pointer">
-            <IconHelp size={16} className="text-gray-500" />
-            <span className="group-hover:opacity-100 pointer-events-none opacity-0 max-w-60 absolute left-0 bottom-full mb-1 w-max p-2 bg-gray-700 text-white text-xs rounded-md transition-opacity duration-200">
-              Automatically refresh your token using the refresh URL when it expires.
-            </span>
-          </div>
-        </div>
-      </div>
+      <Oauth2TokenSection
+        oAuth={oAuth}
+        handleChange={handleChange}
+        handleRun={handleRun}
+        handleSave={handleSave}
+        collection={collection}
+        item={item}
+      />
+      <Oauth2AdvancedSettings
+        oAuth={oAuth}
+        request={request}
+        handleChange={handleChange}
+        handleSave={handleSave}
+        collection={collection}
+        item={item}
+      />
       <AdditionalParams
         item={item}
         request={request}
