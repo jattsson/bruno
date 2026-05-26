@@ -516,6 +516,70 @@ export const transformCollectionToSaveToExportAsFile = (collection, options = {}
                   additionalParameters: get(si.request, 'auth.oauth2.additionalParameters', {})
                 };
                 break;
+              case 'openid_code':
+              case 'openid_hybrid':
+                // Same shape as authorization_code (the OIDC grants are protocol-level
+                // variants that share the token-endpoint exchange) plus OIDC params, JAR
+                // (RFC 9101), PAR (RFC 9126), and the Discovery (RFC 8414) endpoint cache.
+                di.request.auth.oauth2 = {
+                  grantType: grantType,
+                  callbackUrl: get(si.request, 'auth.oauth2.callbackUrl', ''),
+                  authorizationUrl: get(si.request, 'auth.oauth2.authorizationUrl', ''),
+                  accessTokenUrl: get(si.request, 'auth.oauth2.accessTokenUrl', ''),
+                  refreshTokenUrl: get(si.request, 'auth.oauth2.refreshTokenUrl', ''),
+                  clientId: get(si.request, 'auth.oauth2.clientId', ''),
+                  clientSecret: get(si.request, 'auth.oauth2.clientSecret', ''),
+                  scope: get(si.request, 'auth.oauth2.scope', ''),
+                  state: get(si.request, 'auth.oauth2.state', ''),
+                  pkce: get(si.request, 'auth.oauth2.pkce', false),
+                  // Token-endpoint client authentication
+                  tokenEndpointAuthMethod: get(si.request, 'auth.oauth2.tokenEndpointAuthMethod')
+                    || (get(si.request, 'auth.oauth2.credentialsPlacement') === 'basic_auth_header'
+                      ? 'client_secret_basic'
+                      : 'client_secret_post'),
+                  tokenEndpointAuthSigningAlg: get(si.request, 'auth.oauth2.tokenEndpointAuthSigningAlg', ''),
+                  privateKey: get(si.request, 'auth.oauth2.privateKey', ''),
+                  privateKeyType: get(si.request, 'auth.oauth2.privateKeyType', ''),
+                  privateKeyFormat: get(si.request, 'auth.oauth2.privateKeyFormat', ''),
+                  keyId: get(si.request, 'auth.oauth2.keyId', ''),
+                  audience: get(si.request, 'auth.oauth2.audience', ''),
+                  assertionLifetime: get(si.request, 'auth.oauth2.assertionLifetime', null),
+                  additionalClaims: get(si.request, 'auth.oauth2.additionalClaims', []),
+                  // OIDC params
+                  issuer: get(si.request, 'auth.oauth2.issuer', ''),
+                  responseType: get(si.request, 'auth.oauth2.responseType', ''),
+                  responseMode: get(si.request, 'auth.oauth2.responseMode', ''),
+                  nonce: get(si.request, 'auth.oauth2.nonce', ''),
+                  prompt: get(si.request, 'auth.oauth2.prompt', ''),
+                  loginHint: get(si.request, 'auth.oauth2.loginHint', ''),
+                  maxAge: get(si.request, 'auth.oauth2.maxAge', null),
+                  acrValues: get(si.request, 'auth.oauth2.acrValues', ''),
+                  // JAR — RFC 9101 signed Request Object
+                  useRequestObject: get(si.request, 'auth.oauth2.useRequestObject', false),
+                  requestObjectSigningAlg: get(si.request, 'auth.oauth2.requestObjectSigningAlg', ''),
+                  requestObjectTyp: get(si.request, 'auth.oauth2.requestObjectTyp', ''),
+                  requestObjectAdditionalClaims: get(si.request, 'auth.oauth2.requestObjectAdditionalClaims', []),
+                  requestObjectPrivateKey: get(si.request, 'auth.oauth2.requestObjectPrivateKey', ''),
+                  requestObjectPrivateKeyType: get(si.request, 'auth.oauth2.requestObjectPrivateKeyType', ''),
+                  requestObjectPrivateKeyFormat: get(si.request, 'auth.oauth2.requestObjectPrivateKeyFormat', ''),
+                  requestObjectKeyId: get(si.request, 'auth.oauth2.requestObjectKeyId', ''),
+                  // PAR — RFC 9126
+                  usePAR: get(si.request, 'auth.oauth2.usePAR', false),
+                  parEndpoint: get(si.request, 'auth.oauth2.parEndpoint', ''),
+                  // Discovery (RFC 8414) cached endpoints
+                  jwksUri: get(si.request, 'auth.oauth2.jwksUri', ''),
+                  userinfoEndpoint: get(si.request, 'auth.oauth2.userinfoEndpoint', ''),
+                  endSessionEndpoint: get(si.request, 'auth.oauth2.endSessionEndpoint', ''),
+                  // Token placement + settings
+                  credentialsId: get(si.request, 'auth.oauth2.credentialsId', 'credentials'),
+                  tokenPlacement: get(si.request, 'auth.oauth2.tokenPlacement', 'header'),
+                  tokenHeaderPrefix: get(si.request, 'auth.oauth2.tokenHeaderPrefix', ''),
+                  tokenQueryKey: get(si.request, 'auth.oauth2.tokenQueryKey', ''),
+                  autoFetchToken: get(si.request, 'auth.oauth2.autoFetchToken', true),
+                  autoRefreshToken: get(si.request, 'auth.oauth2.autoRefreshToken', true),
+                  additionalParameters: get(si.request, 'auth.oauth2.additionalParameters', {})
+                };
+                break;
             }
             break;
           case 'apikey':

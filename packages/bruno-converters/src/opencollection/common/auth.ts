@@ -14,6 +14,28 @@ import type {
   BrunoOAuth2
 } from '../types';
 
+// Bruno-namespaced extension carried inside the OpenCollection auth block so OIDC fields that
+// OpenCollection doesn't model natively (Discovery, JAR per RFC 9101, PAR per RFC 9126, OIDC
+// authorization params) round-trip through OpenCollection JSON. Mirrors the equivalent
+// mechanism in bruno-filestore/src/formats/yml/common/auth-oauth2.ts. Other OpenCollection
+// consumers without OIDC awareness see flow: authorization_code with no OAuth2 semantics lost.
+const BRUNO_OAUTH2_EXTENSION_KEY = 'x-bruno-oauth2';
+
+const OIDC_EXTENSION_FIELDS: (keyof BrunoOAuth2)[] = [
+  // OIDC params:
+  'issuer', 'responseType', 'responseMode',
+  'nonce', 'prompt', 'loginHint', 'maxAge', 'acrValues',
+  // JAR — RFC 9101 signed Request Object:
+  'useRequestObject', 'requestObjectSigningAlg', 'requestObjectTyp',
+  'requestObjectAdditionalClaims',
+  'requestObjectPrivateKey', 'requestObjectPrivateKeyType', 'requestObjectPrivateKeyFormat',
+  'requestObjectKeyId',
+  // PAR — RFC 9126:
+  'usePAR', 'parEndpoint',
+  // Discovery (RFC 8414) cached endpoints:
+  'jwksUri', 'userinfoEndpoint', 'endSessionEndpoint'
+];
+
 const fromOpenCollectionOAuth2 = (auth: AuthOAuth2): BrunoAuth => {
   const getTokenPlacement = (tokenConfig: AuthOAuth2['tokenConfig']): string => {
     if (tokenConfig?.placement && 'query' in tokenConfig.placement) {
@@ -117,9 +139,17 @@ const fromOpenCollectionOAuth2 = (auth: AuthOAuth2): BrunoAuth => {
         autoRefreshToken: auth.settings?.autoRefreshToken !== false
       });
 
-    case 'authorization_code':
-      return buildOAuth2Config({
-        grantType: 'authorization_code',
+    case 'authorization_code': {
+      // The x-bruno-oauth2 extension may carry an OIDC grantType (openid_code / openid_hybrid)
+      // along with OIDC-specific fields (Discovery, JAR, PAR). When present we restore them on
+      // top of the OpenCollection-modeled authorization_code shape.
+      const ext = (auth as any)[BRUNO_OAUTH2_EXTENSION_KEY] as Record<string, unknown> | undefined;
+      const grantType =
+        ext?.grantType === 'openid_code' || ext?.grantType === 'openid_hybrid'
+          ? (ext.grantType as 'openid_code' | 'openid_hybrid')
+          : 'authorization_code';
+      const config = buildOAuth2Config({
+        grantType,
         authorizationUrl: auth.authorizationUrl || null,
         accessTokenUrl: auth.accessTokenUrl || null,
         refreshTokenUrl: auth.refreshTokenUrl || null,
@@ -136,6 +166,17 @@ const fromOpenCollectionOAuth2 = (auth: AuthOAuth2): BrunoAuth => {
         autoFetchToken: auth.settings?.autoFetchToken !== false,
         autoRefreshToken: auth.settings?.autoRefreshToken !== false
       });
+      // Restore whitelisted OIDC fields from the extension. Whitelisted to OIDC_EXTENSION_FIELDS
+      // so a hand-edited collection can't override canonical fields like grantType or the URLs.
+      if (ext && config.oauth2) {
+        for (const k of OIDC_EXTENSION_FIELDS) {
+          if (k in ext) {
+            (config.oauth2 as any)[k] = ext[k];
+          }
+        }
+      }
+      return config;
+    }
 
     case 'implicit':
       return buildOAuth2Config({
@@ -421,6 +462,48 @@ const toOpenCollectionOAuth2 = (oauth2: BrunoOAuth2 | null | undefined): AuthOAu
           autoFetchToken: oauth2.autoFetchToken !== false
         }
       };
+
+    case 'openid_code':
+    case 'openid_hybrid': {
+      // OpenCollection doesn't model OIDC. Serialise as authorization_code so the OAuth2 fields
+      // OpenCollection does understand survive; the x-bruno-oauth2 extension below carries the
+      // original grantType and OIDC-specific config so Bruno can restore it on read.
+      const flow: AuthOAuth2 = {
+        ...base,
+        flow: 'authorization_code',
+        authorizationUrl: oauth2.authorizationUrl || '',
+        accessTokenUrl: oauth2.accessTokenUrl || '',
+        refreshTokenUrl: oauth2.refreshTokenUrl || '',
+        callbackUrl: oauth2.callbackUrl || '',
+        credentials: {
+          clientId: oauth2.clientId || '',
+          clientSecret: oauth2.clientSecret || '',
+          placement: oauth2.tokenEndpointAuthMethod === 'client_secret_basic' ? 'basic_auth_header' : 'body'
+        },
+        scope: oauth2.scope || '',
+        state: oauth2.state || '',
+        pkce: oauth2.pkce ? {} : { disabled: true },
+        tokenConfig: {
+          id: oauth2.credentialsId || 'credentials',
+          placement: oauth2.tokenPlacement === 'query'
+            ? { query: oauth2.tokenQueryKey || 'access_token' }
+            : { header: oauth2.tokenHeaderPrefix || 'Bearer' }
+        },
+        settings: {
+          autoFetchToken: oauth2.autoFetchToken !== false,
+          autoRefreshToken: oauth2.autoRefreshToken !== false
+        }
+      };
+      const ext: Record<string, unknown> = { grantType: oauth2.grantType };
+      for (const k of OIDC_EXTENSION_FIELDS) {
+        const v = (oauth2 as any)[k];
+        if (v !== undefined && v !== null && v !== '') {
+          ext[k] = v;
+        }
+      }
+      (flow as unknown as Record<string, unknown>)[BRUNO_OAUTH2_EXTENSION_KEY] = ext;
+      return flow;
+    }
 
     default:
       return undefined;
