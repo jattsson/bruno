@@ -1,12 +1,20 @@
 import React from 'react';
 import { IconTrash, IconPlus } from '@tabler/icons';
+import { useTheme } from 'providers/Theme';
+import SingleLineEditor from 'components/SingleLineEditor';
+import MultiLineEditor from 'components/MultiLineEditor';
 import { uuid } from 'utils/common';
 
 // Editor for the `requestObjectAdditionalClaims` list — name/value/enabled rows merged into the
 // signed Request Object JWT. Values that parse as JSON objects/arrays are sent as nested
 // structures (so OIDC's `claims` request parameter and similar can be expressed); plain strings
 // are sent as strings.
-const RequestObjectClaims = ({ value = [], onChange }) => {
+//
+// The name and value cells use Bruno's CodeMirror-backed editors so {{var}} references resolve
+// against the collection's environment / runtime variables — same behaviour as the
+// AdditionalParams editor below.
+const RequestObjectClaims = ({ value = [], onChange, collection, handleSave }) => {
+  const { storedTheme } = useTheme();
   const claims = Array.isArray(value) ? value : [];
 
   const updateAt = (index, patch) => {
@@ -38,22 +46,25 @@ const RequestObjectClaims = ({ value = [], onChange }) => {
             className="cursor-pointer mt-2"
             title={claim.enabled !== false ? 'Disable' : 'Enable'}
           />
-          <input
-            type="text"
-            value={claim.name || ''}
-            onChange={(e) => updateAt(index, { name: e.target.value })}
-            placeholder="claim name (e.g. claims)"
-            className="single-line-editor-wrapper flex-1 min-w-0"
-            style={{ minHeight: '2rem' }}
-          />
-          <textarea
-            value={claim.value || ''}
-            onChange={(e) => updateAt(index, { value: e.target.value })}
-            placeholder='{"id_token":{"acr":{"essential":true}}}'
-            rows={Math.max(1, Math.min(6, (claim.value || '').split('\n').length))}
-            className="single-line-editor-wrapper flex-1 min-w-0 font-mono text-xs"
-            style={{ resize: 'vertical' }}
-          />
+          <div className="single-line-editor-wrapper flex-1 min-w-0">
+            <SingleLineEditor
+              value={claim.name || ''}
+              theme={storedTheme}
+              onChange={(val) => updateAt(index, { name: val })}
+              collection={collection}
+              onSave={handleSave}
+              isCompact
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <MultiLineEditor
+              value={claim.value || ''}
+              theme={storedTheme}
+              onChange={(val) => updateAt(index, { value: val })}
+              collection={collection}
+              onSave={handleSave}
+            />
+          </div>
           <button
             type="button"
             onClick={() => removeAt(index)}

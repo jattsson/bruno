@@ -603,6 +603,8 @@ const OpenIDConnect = ({ save, item = {}, request, handleRun, updateAuth, collec
               <RequestObjectClaims
                 value={oAuth.requestObjectAdditionalClaims || []}
                 onChange={(claims) => handleChange('requestObjectAdditionalClaims', claims)}
+                collection={collection}
+                handleSave={handleSave}
               />
             </div>
           </div>
