@@ -37,12 +37,32 @@ const authorizeUserInSystemBrowser = ({ authorizeUrl, callbackUrl, grantType = '
 
     debugInfo.data.push(authorizationRequest);
 
-    const wrappedResolve = (value) => {
+    // Reshape the structured payload from the protocol handler into the result shape the
+    // OAuth2 token-fetcher expects per grantType. Mirrors authorize-user-in-window.js so the
+    // two browser paths produce identical downstream shapes.
+    const wrappedResolve = (payload) => {
       clearTimeout(timeout);
       if (grantType === 'implicit') {
-        resolve({ implicitTokens: value, debugInfo });
+        const implicitTokens = {
+          access_token: payload.access_token,
+          token_type: payload.token_type,
+          expires_in: payload.expires_in,
+          state: payload.state,
+          scope: payload.scope
+        };
+        resolve({ implicitTokens, debugInfo });
+      } else if (grantType === 'openid_hybrid') {
+        const hybridTokens = {
+          id_token: payload.id_token,
+          access_token: payload.access_token,
+          token_type: payload.token_type,
+          expires_in: payload.expires_in,
+          state: payload.state
+        };
+        resolve({ authorizationCode: payload.code, hybridTokens, debugInfo });
       } else {
-        resolve({ authorizationCode: value, debugInfo });
+        // authorization_code, openid_code, and any future code-flow variant
+        resolve({ authorizationCode: payload.code, debugInfo });
       }
     };
 

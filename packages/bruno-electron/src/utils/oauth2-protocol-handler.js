@@ -40,6 +40,17 @@ const cancelOAuth2AuthorizationRequest = () => {
   return rejectOauth2AuthorizationRequest(new Error('Authorization cancelled by user'));
 };
 
+// Parses the OAuth2/OIDC callback URL Bruno received via the bruno:// protocol and resolves
+// a structured payload containing every field the response could carry, regardless of grant
+// type. The caller (authorize-user-in-system-browser.js) reshapes this per grantType — same
+// shape contract as the in-window flow in authorize-user-in-window.js, so the two browser
+// paths behave identically.
+//
+// Supported response_modes:
+//   query   — OAuth 2.0 authorization_code default; `code` lives in ?code=…
+//   fragment — OIDC Hybrid default for response_type=code id_token; `code` and `id_token`
+//              both live in the fragment alongside any access_token / state
+//   form_post — NOT supported (Bruno's protocol handler is GET-only)
 const handleOauth2ProtocolUrl = (url) => {
   try {
     const urlObj = new URL(url);
@@ -66,48 +77,37 @@ const handleOauth2ProtocolUrl = (url) => {
       oauth2AuthorizationRequest.debugInfo.data.push(callbackRequest);
     }
 
-    // Check for errors in query params (authorization code flow) or hash (implicit flow)
-    const error = urlObj.searchParams.get('error') || (urlObj.hash ? new URLSearchParams(urlObj.hash.substring(1)).get('error') : null);
-    const errorDescription = urlObj.searchParams.get('error_description') || (urlObj.hash ? new URLSearchParams(urlObj.hash.substring(1)).get('error_description') : null);
+    const hashParams = urlObj.hash ? new URLSearchParams(urlObj.hash.substring(1)) : new URLSearchParams();
+    const fromEither = (name) => urlObj.searchParams.get(name) ?? hashParams.get(name);
 
+    // RFC 6749 §4.1.2.1 / OIDC Core §3.1.2.6: errors may arrive in either query (code flow)
+    // or fragment (implicit / hybrid).
+    const error = fromEither('error');
     if (error) {
       const errorData = {
         message: 'Authorization Failed!',
         error,
-        errorDescription
+        errorDescription: fromEither('error_description')
       };
       rejectOauth2AuthorizationRequest(new Error(JSON.stringify(errorData)));
       return;
     }
 
-    // Check if this is an implicit grant (tokens in hash fragment)
-    if (urlObj.hash) {
-      const hash = urlObj.hash.substring(1); // Remove the leading #
-      const hashParams = new URLSearchParams(hash);
-      const accessToken = hashParams.get('access_token');
+    const payload = {
+      code: fromEither('code'),
+      id_token: hashParams.get('id_token'),
+      access_token: hashParams.get('access_token'),
+      token_type: hashParams.get('token_type'),
+      expires_in: hashParams.get('expires_in'),
+      state: fromEither('state'),
+      scope: hashParams.get('scope')
+    };
 
-      if (accessToken) {
-        // Extract tokens from hash fragment for implicit grant
-        const implicitTokens = {
-          access_token: accessToken,
-          token_type: hashParams.get('token_type'),
-          expires_in: hashParams.get('expires_in'),
-          state: hashParams.get('state'),
-          scope: hashParams.get('scope')
-        };
-        resolveOauth2AuthorizationRequest(implicitTokens);
-        return;
-      }
-    }
-
-    // Check for authorization code in query params (authorization code flow)
-    const code = urlObj.searchParams.get('code');
-    if (code) {
-      resolveOauth2AuthorizationRequest(code);
+    if (payload.code || payload.access_token) {
+      resolveOauth2AuthorizationRequest(payload);
       return;
     }
 
-    // No code or access_token found - reject with error
     rejectOauth2AuthorizationRequest(new Error('Invalid OAuth2 callback: missing code or access_token'));
   } catch (err) {
     console.error('Error handling protocol URL:', err);
