@@ -1157,16 +1157,9 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
     return Promise.reject(safeStringifyJSON({ error: 'No authorization code returned' }));
   }
 
-  // 4. Token exchange — identical to the auth-code flow.
-  let axiosRequestConfig = {
-    method: 'POST',
-    url,
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    responseType: 'arraybuffer'
-  };
+  // 4. Token exchange — identical to the auth-code flow. Front-load debugInfo with any frames
+  // accumulated earlier (PAR exchange, then the in-window browser flow) so the helper appends
+  // the token-exchange frame in chronological order.
   const data = {
     grant_type: 'authorization_code',
     code: authorizationCode,
@@ -1175,16 +1168,22 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
   if (pkce) {
     data.code_verifier = codeVerifier;
   }
-  const clientAuth = await applyTokenEndpointAuth({ ...oAuth, accessTokenUrl: url });
-  Object.assign(axiosRequestConfig.headers, clientAuth.headers);
-  Object.assign(data, clientAuth.bodyParams);
-  if (additionalParameters?.token?.length) {
-    applyAdditionalParameters(axiosRequestConfig, data, additionalParameters.token);
-  }
-  axiosRequestConfig.data = qs.stringify(data);
+
+  const debugInfo = { data: [] };
+  if (parDebugInfo) debugInfo.data.push(parDebugInfo);
+  if (browserDebugInfo?.data?.length) debugInfo.data.push(...browserDebugInfo.data);
 
   try {
-    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig: certsAndProxyConfigForTokenUrl });
+    const { credentials } = await performTokenExchange({
+      oAuth,
+      url,
+      data,
+      additionalTokenParams: additionalParameters?.token,
+      certsAndProxyConfig: certsAndProxyConfigForTokenUrl,
+      collectionUid,
+      credentialsId,
+      debugInfo
+    });
     // Hybrid Flow: id_token may also have been returned in the authorization-response fragment.
     // The token-endpoint id_token (back-channel) typically carries more claims than the
     // fragment id_token (front-channel, OIDC Core §3.3.2.10 minimum). Prefer the back-channel one.
@@ -1194,10 +1193,6 @@ const getOIDCToken = async ({ request, collectionUid, forceFetch = false, certsA
     if (credentials && effectiveNonce) {
       credentials.nonce = effectiveNonce;
     }
-    const debugInfo = { data: [requestDetails].filter(Boolean) };
-    if (browserDebugInfo) debugInfo.data.unshift(...(browserDebugInfo.data || []));
-    if (parDebugInfo) debugInfo.data.unshift(parDebugInfo);
-    credentials && persistOauth2Credentials({ collectionUid, url, credentials, credentialsId });
     return { collectionUid, url, credentials, credentialsId, debugInfo };
   } catch (error) {
     return Promise.reject(safeStringifyJSON(error?.response?.data));
