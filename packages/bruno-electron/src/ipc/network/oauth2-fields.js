@@ -19,7 +19,12 @@ const KNOWN_OAUTH2_GRANT_TYPES = new Set([
   'authorization_code',
   'client_credentials',
   'password',
-  'implicit'
+  'implicit',
+  // OpenID Connect — protocol-level variants of authorization_code that fetch an id_token
+  // alongside the access_token (and, for hybrid, also receive the id_token via the
+  // front-channel fragment). The token-endpoint exchange is identical to authorization_code.
+  'openid_code',
+  'openid_hybrid'
 ]);
 
 const OAUTH2_FIELDS = [
@@ -41,7 +46,16 @@ const OAUTH2_FIELDS = [
   // Settings
   'autoFetchToken', 'autoRefreshToken',
   // Additional parameters keyed by stage (authorization / token / refresh)
-  'additionalParameters'
+  'additionalParameters',
+  // OpenID Connect — Discovery, params, JAR (RFC 9101), PAR (RFC 9126)
+  'issuer', 'responseType', 'responseMode',
+  'nonce', 'prompt', 'loginHint', 'maxAge', 'acrValues',
+  'useRequestObject', 'requestObjectSigningAlg', 'requestObjectTyp',
+  'requestObjectAdditionalClaims',
+  'requestObjectPrivateKey', 'requestObjectPrivateKeyType', 'requestObjectPrivateKeyFormat',
+  'requestObjectKeyId',
+  'usePAR', 'parEndpoint',
+  'jwksUri', 'userinfoEndpoint', 'endSessionEndpoint'
 ];
 
 /**
@@ -58,7 +72,14 @@ const OAUTH2_INTERPOLATABLE_STRING_FIELDS = [
   'tokenEndpointAuthMethod', 'tokenEndpointAuthSigningAlg',
   'privateKey', 'privateKeyType', 'privateKeyFormat', 'keyId',
   'audience',
-  'credentialsId', 'tokenPlacement', 'tokenHeaderPrefix', 'tokenQueryKey', 'tokenSource'
+  'credentialsId', 'tokenPlacement', 'tokenHeaderPrefix', 'tokenQueryKey', 'tokenSource',
+  // OIDC string fields
+  'issuer', 'responseType', 'responseMode',
+  'nonce', 'prompt', 'loginHint', 'acrValues',
+  'requestObjectSigningAlg', 'requestObjectTyp',
+  'requestObjectPrivateKey', 'requestObjectPrivateKeyType', 'requestObjectPrivateKeyFormat',
+  'requestObjectKeyId',
+  'parEndpoint', 'jwksUri', 'userinfoEndpoint', 'endSessionEndpoint'
 ];
 
 /**

@@ -250,14 +250,17 @@ const interpolateVars = (request, envVariables = {}, runtimeVariables = {}, proc
     }
 
     // Interpolate enabled additionalClaims rows (used as JWT claims in client_secret_jwt /
-    // private_key_jwt assertions). Same pattern as additionalParameters below.
-    if (Array.isArray(request.oauth2.additionalClaims)) {
-      request.oauth2.additionalClaims.forEach((claim) => {
-        if (claim && claim.enabled !== false) {
-          claim.name = _interpolate(claim.name) || '';
-          claim.value = _interpolate(claim.value) || '';
-        }
-      });
+    // private_key_jwt assertions) and requestObjectAdditionalClaims (used as claims in the
+    // JAR signed Request Object, RFC 9101). Same pattern as additionalParameters below.
+    for (const claimsField of ['additionalClaims', 'requestObjectAdditionalClaims']) {
+      if (Array.isArray(request.oauth2[claimsField])) {
+        request.oauth2[claimsField].forEach((claim) => {
+          if (claim && claim.enabled !== false) {
+            claim.name = _interpolate(claim.name) || '';
+            claim.value = _interpolate(claim.value) || '';
+          }
+        });
+      }
     }
 
     // Interpolate additional parameters for all OAuth2 grant types

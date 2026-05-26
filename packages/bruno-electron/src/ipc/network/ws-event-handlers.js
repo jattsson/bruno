@@ -18,7 +18,8 @@ const { getProcessEnvVars } = require('../../store/process-env');
 const {
   getOAuth2TokenUsingPasswordCredentials,
   getOAuth2TokenUsingClientCredentials,
-  getOAuth2TokenUsingAuthorizationCode
+  getOAuth2TokenUsingAuthorizationCode,
+  getOIDCToken
 } = require('../../utils/oauth2');
 const { interpolateString } = require('./interpolate-string');
 const path = require('node:path');
@@ -223,6 +224,38 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
           credentialsId,
           debugInfo
         } = await getOAuth2TokenUsingPasswordCredentials({
+          request: requestCopy,
+          collectionUid: collection.uid,
+          certsAndProxyConfigForTokenUrl,
+          certsAndProxyConfigForRefreshUrl
+        }));
+        wsRequest.oauth2Credentials = {
+          credentials,
+          url: oauth2Url,
+          collectionUid: collection.uid,
+          credentialsId,
+          debugInfo,
+          folderUid: request.oauth2Credentials?.folderUid
+        };
+        if (tokenPlacement == 'header') {
+          wsRequest.headers['Authorization'] = `${tokenHeaderPrefix} ${credentials?.access_token}`;
+        } else {
+          try {
+            const url = new URL(request.url);
+            url?.searchParams?.set(tokenQueryKey, credentials?.access_token);
+            request.url = url?.toString();
+          } catch (error) {}
+        }
+        break;
+      case 'openid_code':
+      case 'openid_hybrid':
+        interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
+        ({
+          credentials,
+          url: oauth2Url,
+          credentialsId,
+          debugInfo
+        } = await getOIDCToken({
           request: requestCopy,
           collectionUid: collection.uid,
           certsAndProxyConfigForTokenUrl,

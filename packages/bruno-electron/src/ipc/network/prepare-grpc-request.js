@@ -2,7 +2,7 @@ const { cloneDeep, each, get } = require('lodash');
 const interpolateVars = require('./interpolate-vars');
 const { getEnvVars, getTreePathFromCollectionToItem, mergeHeaders, mergeScripts, mergeVars, mergeAuth, getFormattedCollectionOauth2Credentials } = require('../../utils/collection');
 const { getProcessEnvVars } = require('../../store/process-env');
-const { getOAuth2TokenUsingPasswordCredentials, getOAuth2TokenUsingClientCredentials, getOAuth2TokenUsingAuthorizationCode } = require('../../utils/oauth2');
+const { getOAuth2TokenUsingPasswordCredentials, getOAuth2TokenUsingClientCredentials, getOAuth2TokenUsingAuthorizationCode, getOIDCToken } = require('../../utils/oauth2');
 const { setAuthHeaders } = require('./prepare-request');
 const { getCertsAndProxyConfig } = require('./cert-utils');
 const { interpolateString } = require('./interpolate-string');
@@ -106,6 +106,13 @@ const configureRequest = async (grpcRequest, request, collection, envVars, runti
         case 'password':
           interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
           ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingPasswordCredentials({ request: requestCopy, collectionUid: collection.uid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
+          grpcRequest.oauth2Credentials = { credentials, url: oauth2Url, collectionUid: collection.uid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
+          placeOAuth2Token(grpcRequest, credentials, tokenPlacement, tokenHeaderPrefix, tokenQueryKey);
+          break;
+        case 'openid_code':
+        case 'openid_hybrid':
+          interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
+          ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOIDCToken({ request: requestCopy, collectionUid: collection.uid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
           grpcRequest.oauth2Credentials = { credentials, url: oauth2Url, collectionUid: collection.uid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
           placeOAuth2Token(grpcRequest, credentials, tokenPlacement, tokenHeaderPrefix, tokenQueryKey);
           break;
